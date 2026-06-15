@@ -7,6 +7,47 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ========== AUTH ==========
+enum Role {
+  DEVELOPER
+  OPTICIAN
+  EMPLOYEE
+}
+
+model Shop {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users   User[]
+  stores  Store[]
+  clients Client[]
+  frames  Frame[]
+  lenses  Lens[]
+  orders  Order[]
+
+  @@map("shops")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  active       Boolean  @default(true)
+
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
 // ========== PANORAMA ==========
 model Store {
   id        String     @id @default(cuid())
@@ -14,6 +55,9 @@ model Store {
   imageUrl  String
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   hotspots  Hotspot[]
 
@@ -49,6 +93,9 @@ model Client {
   phone       String?
   address     String?
   birthDate   DateTime?
+
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   prescriptions Prescription[]
   purchases   Purchase[]
@@ -109,6 +156,9 @@ model Frame {
   stock       Int        @default(0)
   description String?
 
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
   purchases   Purchase[]
   orders      Order[]
 
@@ -129,6 +179,9 @@ model Lens {
   stock       Int        @default(0)
   description String?
 
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
   orderItems  OrderItem[]
 
   createdAt   DateTime   @default(now())
@@ -148,6 +201,9 @@ model Order {
   frame       Frame      @relation(fields: [frameId], references: [id])
 
   items       OrderItem[]
+
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   status      String
   totalPrice  Float
