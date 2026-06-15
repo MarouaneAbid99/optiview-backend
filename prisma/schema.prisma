@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== PANORAMA ==========
+model Store {
+  id        String     @id @default(cuid())
+  name      String
+  imageUrl  String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  hotspots  Hotspot[]
+
+  @@map("stores")
+}
+
+model Hotspot {
+  id        String     @id @default(cuid())
+  storeId   String
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  module    String
+  label     String
+
+  x         Float
+  y         Float
+  w         Float
+  h         Float
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([storeId, module])
+  @@map("hotspots")
+}
+
+// ========== CLIENTS ==========
+model Client {
+  id          String     @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?    @unique
+  phone       String?
+  address     String?
+  birthDate   DateTime?
+
+  prescriptions Prescription[]
+  purchases   Purchase[]
+  appointments Appointment[]
+  orders      Order[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("clients")
+}
+
+model Prescription {
+  id          String     @id @default(cuid())
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  dateIssued  DateTime
+  sphereOD    Float?
+  sphereOS    Float?
+  cylinderOD  Float?
+  cylinderOS  Float?
+  axisOD      Float?
+  axisOS      Float?
+  additionOD  Float?
+  additionOS  Float?
+  notes       String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("prescriptions")
+}
+
+model Appointment {
+  id          String     @id @default(cuid())
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  dateTime    DateTime
+  status      String
+  notes       String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("appointments")
+}
+
+// ========== EYEWEAR ==========
+model Frame {
+  id          String     @id @default(cuid())
+  brand       String
+  model       String
+  category    String
+  color       String?
+  price       Float
+  stock       Int        @default(0)
+  description String?
+
+  purchases   Purchase[]
+  orders      Order[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("frames")
+}
+
+// ========== LENSES ==========
+model Lens {
+  id          String     @id @default(cuid())
+  type        String
+  material    String
+  coating     String?
+  treatment   String?
+  price       Float
+  stock       Int        @default(0)
+  description String?
+
+  orderItems  OrderItem[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("lenses")
+}
+
+// ========== ATELIER ==========
+model Order {
+  id          String     @id @default(cuid())
+  orderNumber String     @unique
+  clientId    String?
+  client      Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  frameId     String
+  frame       Frame      @relation(fields: [frameId], references: [id])
+
+  items       OrderItem[]
+
+  status      String
+  totalPrice  Float
+  notes       String?
+  deliveryDate DateTime?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String     @id @default(cuid())
+  orderId     String
+  order       Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  lensId      String
+  lens        Lens       @relation(fields: [lensId], references: [id])
+
+  quantity    Int
+  pricePerUnit Float
+
+  @@map("order_items")
+}
+
+model Purchase {
+  id          String     @id @default(cuid())
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  frameId     String
+  frame       Frame      @relation(fields: [frameId], references: [id])
+
+  quantity    Int
+  totalPrice  Float
+  purchaseDate DateTime   @default(now())
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("purchases")
+}
