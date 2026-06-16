@@ -3,48 +3,77 @@ import { AtelierService } from './atelier.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../common/tenant.util';
+import { resolveShopId, resolveShopIdForWrite } from '../common/tenant.util';
 
 @Controller('api/atelier')
 export class AtelierController {
   constructor(private readonly atelierService: AtelierService) {}
 
   @Post('orders')
-  createOrder(@Body() dto: CreateOrderDto) {
-    return this.atelierService.createOrder(dto);
+  createOrder(
+    @Body() dto: CreateOrderDto,
+    @CurrentUser() user: AuthUser,
+    @Query('shopId') shopIdParam?: string,
+  ) {
+    const shopId = resolveShopIdForWrite(user, shopIdParam);
+    return this.atelierService.createOrder(dto, shopId);
   }
 
   @Get('orders/kanban')
-  getOrdersByStatus() {
-    return this.atelierService.getOrdersByStatus();
+  getOrdersByStatus(@CurrentUser() user: AuthUser, @Query('shopId') shopIdParam?: string) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.getOrdersByStatus(shopId);
   }
 
   @Get('orders/stats')
-  getStats() {
-    return this.atelierService.getOrderStats();
+  getStats(@CurrentUser() user: AuthUser, @Query('shopId') shopIdParam?: string) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.getOrderStats(shopId);
   }
 
   @Get('orders')
-  findAllOrders(@Query('status') status?: string) {
-    return this.atelierService.findAllOrders(status);
+  findAllOrders(
+    @CurrentUser() user: AuthUser,
+    @Query('status') status?: string,
+    @Query('shopId') shopIdParam?: string,
+  ) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.findAllOrders(status, shopId);
   }
 
   @Get('orders/:id')
-  findOrderById(@Param('id') id: string) {
-    return this.atelierService.findOrderById(id);
+  findOrderById(@Param('id') id: string, @CurrentUser() user: AuthUser, @Query('shopId') shopIdParam?: string) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.findOrderById(id, shopId);
   }
 
   @Put('orders/:id/status')
-  updateOrderStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
-    return this.atelierService.updateOrderStatus(id, dto);
+  updateOrderStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderStatusDto,
+    @CurrentUser() user: AuthUser,
+    @Query('shopId') shopIdParam?: string,
+  ) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.updateOrderStatus(id, dto, shopId);
   }
 
   @Put('orders/:id')
-  updateOrder(@Param('id') id: string, @Body() dto: UpdateOrderDto) {
-    return this.atelierService.updateOrder(id, dto);
+  updateOrder(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderDto,
+    @CurrentUser() user: AuthUser,
+    @Query('shopId') shopIdParam?: string,
+  ) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.updateOrder(id, dto, shopId);
   }
 
   @Delete('orders/:id')
-  deleteOrder(@Param('id') id: string) {
-    return this.atelierService.deleteOrder(id);
+  deleteOrder(@Param('id') id: string, @CurrentUser() user: AuthUser, @Query('shopId') shopIdParam?: string) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.atelierService.deleteOrder(id, shopId);
   }
 }

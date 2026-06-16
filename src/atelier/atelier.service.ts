@@ -20,9 +20,9 @@ export class AtelierService {
     return `ORD-${year}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  async createOrder(dto: CreateOrderDto) {
+  async createOrder(dto: CreateOrderDto, shopId: string) {
     const frame = await this.prisma.frame.findUnique({ where: { id: dto.frameId } });
-    if (!frame) throw new NotFoundException('Frame not found');
+    if (!frame || frame.shopId !== shopId) throw new NotFoundException('Frame not found in your shop');
     if (frame.stock < 1) throw new BadRequestException(`Frame ${frame.brand} ${frame.model} is out of stock`);
 
     let lensTotal = 0;
@@ -30,7 +30,7 @@ export class AtelierService {
 
     for (const item of dto.items) {
       const lens = await this.prisma.lens.findUnique({ where: { id: item.lensId } });
-      if (!lens) throw new NotFoundException(`Lens ${item.lensId} not found`);
+      if (!lens || lens.shopId !== shopId) throw new NotFoundException(`Lens ${item.lensId} not found in your shop`);
       if (lens.stock < item.quantity) {
         throw new BadRequestException(
           `Insufficient stock for ${lens.type} ${lens.material}. Available: ${lens.stock}, Requested: ${item.quantity}`,
@@ -40,6 +40,11 @@ export class AtelierService {
       lensTotal += lens.price * item.quantity;
     }
 
+    if (dto.clientId) {
+      const client = await this.prisma.client.findUnique({ where: { id: dto.clientId } });
+      if (!client || client.shopId !== shopId) throw new NotFoundException('Client not found in your shop');
+    }
+
     const totalPrice = frame.price + lensTotal;
     const orderNumber = await this.generateOrderNumber();
 
@@ -47,6 +52,7 @@ export class AtelierService {
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
+          shopId,
           clientId: dto.clientId || null,
           frameId: dto.frameId,
           status: dto.status || 'pending',
@@ -64,7 +70,6 @@ export class AtelierService {
       });
 
       await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
-
       for (const item of dto.items) {
         await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
       }
@@ -73,16 +78,20 @@ export class AtelierService {
     });
   }
 
-  async findAllOrders(status?: string) {
+  async findAllOrders(status?: string, shopId?: string) {
+    const where: any = {};
+    if (status) where.status = status;
+    if (shopId) where.shopId = shopId;
     return this.prisma.order.findMany({
-      where: status ? { status } : {},
+      where,
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async getOrdersByStatus() {
+  async getOrdersByStatus(shopId?: string) {
     const orders = await this.prisma.order.findMany({
+      where: shopId ? { shopId } : {},
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -102,15 +111,16 @@ export class AtelierService {
     return grouped;
   }
 
-  async findOrderById(id: string) {
+  async findOrderById(id: string, shopId?: string) {
     const order = await this.prisma.order.findUnique({ where: { id }, include: ORDER_INCLUDE });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    if (!order || (shopId && order.shopId !== shopId)) {
+      throw new NotFoundException(`Order ${id} not found`);
+    }
     return order;
   }
 
-  async updateOrderStatus(id: string, dto: UpdateOrderStatusDto) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) throw new NotFoundException('Order not found');
+  async updateOrderStatus(id: string, dto: UpdateOrderStatusDto, shopId?: string) {
+    const order = await this.findOrderById(id, shopId);
 
     if (dto.status === 'cancelled' && order.status !== 'cancelled') {
       await this.restoreStock(id);
@@ -123,7 +133,8 @@ export class AtelierService {
     });
   }
 
-  async updateOrder(id: string, dto: UpdateOrderDto) {
+  async updateOrder(id: string, dto: UpdateOrderDto, shopId?: string) {
+    await this.findOrderById(id, shopId);
     return this.prisma.order.update({
       where: { id },
       data: {
@@ -150,15 +161,16 @@ export class AtelierService {
     });
   }
 
-  async deleteOrder(id: string) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) throw new NotFoundException('Order not found');
+  async deleteOrder(id: string, shopId?: string) {
+    const order = await this.findOrderById(id, shopId);
     if (order.status !== 'cancelled') await this.restoreStock(id);
     return this.prisma.order.delete({ where: { id } });
   }
 
-  async getOrderStats() {
-    const orders = await this.prisma.order.findMany();
+  async getOrderStats(shopId?: string) {
+    const orders = await this.prisma.order.findMany({
+      where: shopId ? { shopId } : {},
+    });
     const totalOrders = orders.length;
     const pending = orders.filter((o) => o.status === 'pending').length;
     const inProgress = orders.filter((o) => o.status === 'in-progress').length;
