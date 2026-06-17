@@ -96,11 +96,18 @@ export class AtelierService {
     });
   }
 
-  async findAllOrders(status?: string, shopId?: string, orderType?: string) {
+  async findAllOrders(status?: string, shopId?: string, orderType?: string, search?: string) {
     const where: any = {};
-    if (status) where.status = status;
     if (shopId) where.shopId = shopId;
+    if (status) where.status = status;
     if (orderType) where.orderType = orderType;
+    if (search) {
+      where.OR = [
+        { orderNumber: { contains: search, mode: 'insensitive' } },
+        { client: { firstName: { contains: search, mode: 'insensitive' } } },
+        { client: { lastName: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
     return this.prisma.order.findMany({
       where,
       include: ORDER_INCLUDE,
