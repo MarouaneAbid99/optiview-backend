@@ -51,7 +51,14 @@ export class ClientsService {
     });
     if (!client) throw new NotFoundException(`Client ${id} not found`);
     if (shopId && client.shopId !== shopId) throw new NotFoundException(`Client ${id} not found`);
-    return client;
+
+    const orders = await this.prisma.order.findMany({
+      where: { clientId: id },
+      include: { frame: true, items: { include: { lens: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { ...client, orders };
   }
 
   async updateClient(id: string, dto: UpdateClientDto, shopId?: string) {
