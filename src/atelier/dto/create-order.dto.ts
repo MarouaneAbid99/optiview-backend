@@ -20,17 +20,27 @@ class OrderItemDto {
 }
 
 export class CreateOrderDto {
+  @IsIn(['sale', 'montage', 'sale_montage'])
+  orderType: string;
+
   @IsString()
   @IsOptional()
   clientId?: string;
 
   @IsString()
-  frameId: string;
+  @IsOptional()
+  frameId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
-  items: OrderItemDto[];
+  @IsOptional()
+  items?: OrderItemDto[];
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  laborPrice?: number;
 
   @IsIn(['pending', 'in-progress', 'ready', 'delivered', 'cancelled'])
   @IsOptional()

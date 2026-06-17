@@ -194,11 +194,13 @@ model Lens {
 model Order {
   id          String     @id @default(cuid())
   orderNumber String     @unique
-  clientId    String?
-  client      Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  orderType   String     @default("sale_montage") // "sale" | "montage" | "sale_montage"
 
-  frameId     String
-  frame       Frame      @relation(fields: [frameId], references: [id])
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  frameId String?
+  frame   Frame?  @relation(fields: [frameId], references: [id])
 
   items       OrderItem[]
 
@@ -207,6 +209,7 @@ model Order {
 
   status      String
   totalPrice  Float
+  laborPrice  Float?
   notes       String?
   deliveryDate DateTime?
 

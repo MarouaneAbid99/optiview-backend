@@ -38,9 +38,10 @@ export class AtelierController {
     @CurrentUser() user: AuthUser,
     @Query('status') status?: string,
     @Query('shopId') shopIdParam?: string,
+    @Query('orderType') orderType?: string,
   ) {
     const shopId = resolveShopId(user, shopIdParam);
-    return this.atelierService.findAllOrders(status, shopId);
+    return this.atelierService.findAllOrders(status, shopId, orderType);
   }
 
   @Get('orders/:id')
