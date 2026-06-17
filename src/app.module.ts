@@ -9,6 +9,7 @@ import { EyewearModule } from './eyewear/eyewear.module';
 import { LensesModule } from './lenses/lenses.module';
 import { AtelierModule } from './atelier/atelier.module';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -21,6 +22,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     LensesModule,
     AtelierModule,
     AuthModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [
