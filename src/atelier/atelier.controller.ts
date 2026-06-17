@@ -2,7 +2,6 @@ import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/
 import { AtelierService } from './atelier.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../common/tenant.util';
 import { resolveShopId, resolveShopIdForWrite } from '../common/tenant.util';
@@ -65,7 +64,7 @@ export class AtelierController {
   @Put('orders/:id')
   updateOrder(
     @Param('id') id: string,
-    @Body() dto: UpdateOrderDto,
+    @Body() dto: CreateOrderDto,
     @CurrentUser() user: AuthUser,
     @Query('shopId') shopIdParam?: string,
   ) {

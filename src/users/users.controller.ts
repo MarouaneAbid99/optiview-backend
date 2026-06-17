@@ -4,6 +4,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateOpticianDto } from './dto/create-optician.dto';
+import { UpdateShopDto } from './dto/update-shop.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../common/tenant.util';
@@ -40,6 +41,20 @@ export class UsersController {
   @Delete('employees/:id')
   deleteEmployee(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.usersService.deleteEmployee(id, user.shopId!);
+  }
+
+  // ===== OPTICIAN: shop settings =====
+
+  @Roles('OPTICIAN')
+  @Get('my-shop')
+  getMyShop(@CurrentUser() user: AuthUser) {
+    return this.usersService.getMyShop(user.shopId!);
+  }
+
+  @Roles('OPTICIAN')
+  @Patch('my-shop')
+  updateMyShop(@Body() dto: UpdateShopDto, @CurrentUser() user: AuthUser) {
+    return this.usersService.updateMyShop(user.shopId!, dto);
   }
 
   // ===== DEVELOPER: opticians + shops =====

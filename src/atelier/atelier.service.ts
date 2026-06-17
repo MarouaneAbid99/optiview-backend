@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
 
 const ORDER_INCLUDE = {
   client: true,
@@ -163,16 +162,100 @@ export class AtelierService {
     });
   }
 
-  async updateOrder(id: string, dto: UpdateOrderDto, shopId?: string) {
-    await this.findOrderById(id, shopId);
-    return this.prisma.order.update({
+  async updateOrder(id: string, dto: CreateOrderDto, shopId?: string) {
+    const existing = await this.prisma.order.findUnique({
       where: { id },
-      data: {
-        ...(dto.notes !== undefined && { notes: dto.notes }),
-        ...(dto.deliveryDate && { deliveryDate: new Date(dto.deliveryDate) }),
-        ...(dto.status && { status: dto.status }),
-      },
-      include: ORDER_INCLUDE,
+      include: { items: true },
+    });
+    if (!existing || (shopId && existing.shopId !== shopId)) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const scopeShopId = existing.shopId;
+    const status = existing.status;
+    const newType = dto.orderType;
+    const oldHoldsStock =
+      status !== 'cancelled' &&
+      (existing.orderType === 'sale' || existing.orderType === 'sale_montage');
+    const newInvolvesStock = newType === 'sale' || newType === 'sale_montage';
+    const newHoldsStock = status !== 'cancelled' && newInvolvesStock;
+    const newInvolvesMontage = newType === 'montage' || newType === 'sale_montage';
+
+    // Validate new frame / lenses
+    let frame: any = null;
+    const lensData: Array<{ lens: any; quantity: number }> = [];
+    let lensTotal = 0;
+
+    if (newInvolvesStock) {
+      if (!dto.frameId) throw new BadRequestException('A frame is required for a sale');
+      frame = await this.prisma.frame.findUnique({ where: { id: dto.frameId } });
+      if (!frame || (scopeShopId && frame.shopId !== scopeShopId)) throw new NotFoundException('Frame not found in this shop');
+      if (!dto.items || dto.items.length === 0) throw new BadRequestException('At least one lens is required');
+      for (const item of dto.items) {
+        const lens = await this.prisma.lens.findUnique({ where: { id: item.lensId } });
+        if (!lens || (scopeShopId && lens.shopId !== scopeShopId)) throw new NotFoundException(`Lens ${item.lensId} not found in this shop`);
+        lensData.push({ lens, quantity: item.quantity });
+        lensTotal += lens.price * item.quantity;
+      }
+    }
+
+    if (dto.clientId) {
+      const client = await this.prisma.client.findUnique({ where: { id: dto.clientId } });
+      if (!client || (scopeShopId && client.shopId !== scopeShopId)) throw new NotFoundException('Client not found in this shop');
+    }
+
+    const labor = newInvolvesMontage ? (dto.laborPrice || 0) : 0;
+    const framePrice = frame ? frame.price : 0;
+    const totalPrice = framePrice + lensTotal + labor;
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Restore old stock
+      if (oldHoldsStock) {
+        if (existing.frameId) {
+          await tx.frame.update({ where: { id: existing.frameId }, data: { stock: { increment: 1 } } });
+        }
+        for (const it of existing.items) {
+          await tx.lens.update({ where: { id: it.lensId }, data: { stock: { increment: it.quantity } } });
+        }
+      }
+
+      // 2. Deduct new stock
+      if (newHoldsStock) {
+        const freshFrame = await tx.frame.findUnique({ where: { id: dto.frameId } });
+        if (!freshFrame || freshFrame.stock < 1) throw new BadRequestException('Selected frame is out of stock');
+        await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
+        for (const item of dto.items!) {
+          const freshLens = await tx.lens.findUnique({ where: { id: item.lensId } });
+          if (!freshLens || freshLens.stock < item.quantity) throw new BadRequestException('Insufficient lens stock');
+          await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
+        }
+      }
+
+      // 3. Replace items
+      await tx.orderItem.deleteMany({ where: { orderId: id } });
+
+      // 4. Update order (status not changed)
+      return tx.order.update({
+        where: { id },
+        data: {
+          orderType: newType,
+          clientId: dto.clientId || null,
+          frameId: newInvolvesStock ? dto.frameId : null,
+          totalPrice,
+          laborPrice: newInvolvesMontage ? labor : null,
+          notes: dto.notes ?? null,
+          deliveryDate: dto.deliveryDate ? new Date(dto.deliveryDate) : null,
+          ...(newInvolvesStock && dto.items && {
+            items: {
+              create: dto.items.map((item) => {
+                const info = lensData.find((l) => l.lens.id === item.lensId);
+                return { lensId: item.lensId, quantity: item.quantity, pricePerUnit: info?.lens.price ?? 0 };
+              }),
+            },
+          }),
+        },
+        include: ORDER_INCLUDE,
+      });
     });
   }
 

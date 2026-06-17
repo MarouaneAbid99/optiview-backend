@@ -17,6 +17,10 @@ enum Role {
 model Shop {
   id        String   @id @default(cuid())
   name      String
+  address   String?
+  phone     String?
+  ice       String?
+  city      String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

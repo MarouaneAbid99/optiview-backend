@@ -118,6 +118,16 @@ export class UsersService {
     return opticians.map((u) => this.sanitize(u));
   }
 
+  async getMyShop(shopId: string) {
+    const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
+    if (!shop) throw new NotFoundException('Shop not found');
+    return shop;
+  }
+
+  async updateMyShop(shopId: string, dto: any) {
+    return this.prisma.shop.update({ where: { id: shopId }, data: dto });
+  }
+
   async setShopActive(shopId: string, active: boolean) {
     const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
     if (!shop) throw new NotFoundException('Shop not found');
