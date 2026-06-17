@@ -1,7 +1,7 @@
 export class StoreEntity {
   id: string;
   name: string;
-  imageUrl: string;
+  imageUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 }
