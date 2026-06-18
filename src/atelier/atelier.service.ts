@@ -150,16 +150,42 @@ export class AtelierService {
   }
 
   async updateOrderStatus(id: string, dto: UpdateOrderStatusDto, shopId?: string) {
-    const order = await this.findOrderById(id, shopId);
-
-    if (dto.status === 'cancelled' && order.status !== 'cancelled') {
-      await this.restoreStock(id);
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!order || (shopId && order.shopId !== shopId)) {
+      throw new NotFoundException(`Order ${id} not found`);
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: { status: dto.status },
-      include: ORDER_INCLUDE,
+    const wasCancelled = order.status === 'cancelled';
+    const willCancel   = dto.status === 'cancelled';
+    const involvesStock = order.orderType === 'sale' || order.orderType === 'sale_montage';
+
+    return this.prisma.$transaction(async (tx) => {
+      // Restore stock when moving INTO cancelled
+      if (!wasCancelled && willCancel && involvesStock) {
+        if (order.frameId) {
+          await tx.frame.update({ where: { id: order.frameId }, data: { stock: { increment: 1 } } });
+        }
+        for (const it of order.items) {
+          await tx.lens.update({ where: { id: it.lensId }, data: { stock: { increment: it.quantity } } });
+        }
+      }
+      // Re-deduct stock when moving OUT of cancelled
+      if (wasCancelled && !willCancel && involvesStock) {
+        if (order.frameId) {
+          await tx.frame.update({ where: { id: order.frameId }, data: { stock: { decrement: 1 } } });
+        }
+        for (const it of order.items) {
+          await tx.lens.update({ where: { id: it.lensId }, data: { stock: { decrement: it.quantity } } });
+        }
+      }
+      return tx.order.update({
+        where: { id },
+        data: { status: dto.status },
+        include: ORDER_INCLUDE,
+      });
     });
   }
 
