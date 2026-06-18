@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import PDFDocument from 'pdfkit';
 
 const ORDER_INCLUDE = {
   client: true,
@@ -284,6 +285,107 @@ export class AtelierService {
     const order = await this.findOrderById(id, shopId);
     if (order.status !== 'cancelled') await this.restoreStock(id);
     return this.prisma.order.delete({ where: { id } });
+  }
+
+  async generateInvoice(id: string, shopId?: string): Promise<{ buffer: Buffer; filename: string }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        frame: true,
+        items: { include: { lens: true } },
+        shop: true,
+      },
+    });
+    if (!order || (shopId && order.shopId !== shopId)) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const shop = order.shop;
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
+
+    const blue = '#1e40af';
+    const gray = '#555555';
+
+    // Shop info (left)
+    doc.fillColor(blue).fontSize(22).text(shop?.name || 'OPTIVIEW', 50, 50);
+    doc.fillColor(gray).fontSize(9);
+    let hy = 78;
+    if (shop?.address) { doc.text(shop.address, 50, hy); hy += 12; }
+    if (shop?.city)    { doc.text(shop.city,    50, hy); hy += 12; }
+    if (shop?.phone)   { doc.text('Tél: ' + shop.phone, 50, hy); hy += 12; }
+    if (shop?.ice)     { doc.text('ICE: ' + shop.ice,   50, hy); hy += 12; }
+
+    // Invoice meta (right)
+    doc.fillColor('#000').fontSize(18).text('FACTURE', 350, 50, { align: 'right', width: 195 });
+    doc.fontSize(10).fillColor(gray)
+      .text('N°: ' + order.orderNumber,    350, 80, { align: 'right', width: 195 })
+      .text('Date: ' + new Date(order.createdAt).toLocaleDateString('fr-FR'), 350, 94, { align: 'right', width: 195 });
+
+    // Client block
+    doc.fillColor('#000').fontSize(11).text('Facturé à:', 50, 150);
+    doc.fontSize(10).fillColor('#333');
+    if (order.client) {
+      doc.text(`${order.client.firstName} ${order.client.lastName}`, 50, 166);
+      if (order.client.phone) doc.text(order.client.phone, 50, 180);
+    } else {
+      doc.text('Client de passage', 50, 166);
+    }
+
+    // Table header
+    const tableTop = 220;
+    doc.fillColor('#fff').rect(50, tableTop, 495, 22).fill(blue);
+    doc.fillColor('#fff').fontSize(10);
+    doc.text('Désignation', 56, tableTop + 6);
+    doc.text('Qté',   350, tableTop + 6, { width: 40, align: 'center' });
+    doc.text('P.U.',  395, tableTop + 6, { width: 70, align: 'right' });
+    doc.text('Total', 470, tableTop + 6, { width: 70, align: 'right' });
+
+    // Rows
+    const rows: { label: string; qty: number; price: number }[] = [];
+    if (order.frame) rows.push({ label: `Monture: ${order.frame.brand} ${order.frame.model}`, qty: 1, price: order.frame.price });
+    for (const it of order.items) {
+      rows.push({ label: `Verre: ${it.lens?.type ?? ''} ${it.lens?.material ?? ''}`, qty: it.quantity, price: it.pricePerUnit });
+    }
+    if (order.laborPrice) rows.push({ label: "Montage (main d'oeuvre)", qty: 1, price: order.laborPrice });
+
+    let y = tableTop + 30;
+    doc.fillColor('#000').fontSize(10);
+    rows.forEach((r, i) => {
+      if (i % 2 === 1) { doc.fillColor('#f3f4f6').rect(50, y - 4, 495, 20).fill(); }
+      doc.fillColor('#000');
+      doc.text(r.label, 56, y, { width: 290 });
+      doc.text(String(r.qty),                  350, y, { width: 40, align: 'center' });
+      doc.text(`${r.price.toFixed(2)}`,         395, y, { width: 70, align: 'right' });
+      doc.text(`${(r.qty * r.price).toFixed(2)}`, 470, y, { width: 70, align: 'right' });
+      y += 20;
+    });
+
+    // Totals (prices stored as TTC, back-compute HT + TVA 20%)
+    const totalTTC = order.totalPrice;
+    const ht  = totalTTC / 1.2;
+    const tva = totalTTC - ht;
+    y += 14;
+    doc.fontSize(10).fillColor(gray);
+    doc.text('Total HT:',  350, y,      { width: 110, align: 'right' });
+    doc.text(`${ht.toFixed(2)} MAD`,  470, y, { width: 75, align: 'right' });
+    y += 16;
+    doc.text('TVA 20%:', 350, y,       { width: 110, align: 'right' });
+    doc.text(`${tva.toFixed(2)} MAD`, 470, y, { width: 75, align: 'right' });
+    y += 18;
+    doc.fillColor(blue).fontSize(13);
+    doc.text('Total TTC:', 350, y,            { width: 110, align: 'right' });
+    doc.text(`${totalTTC.toFixed(2)} MAD`, 470, y, { width: 75, align: 'right' });
+
+    // Footer
+    doc.fillColor(gray).fontSize(8).text('Merci de votre confiance.', 50, 760, { align: 'center', width: 495 });
+
+    doc.end();
+    const buffer = await done;
+    return { buffer, filename: `Facture-${order.orderNumber}.pdf` };
   }
 
   async getOrderStats(shopId?: string) {

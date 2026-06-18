@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { AtelierService } from './atelier.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -42,6 +43,23 @@ export class AtelierController {
   ) {
     const shopId = resolveShopId(user, shopIdParam);
     return this.atelierService.findAllOrders(status, shopId, orderType, search);
+  }
+
+  @Get('orders/:id/invoice')
+  async invoice(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+    @Query('shopId') shopIdParam?: string,
+  ) {
+    const shopId = resolveShopId(user, shopIdParam);
+    const { buffer, filename } = await this.atelierService.generateInvoice(id, shopId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get('orders/:id')
