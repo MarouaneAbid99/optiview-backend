@@ -42,4 +42,8 @@ export class CreatePrescriptionDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
 }

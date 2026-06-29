@@ -27,4 +27,8 @@ export class CreateLensDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsString()
+  @IsOptional()
+  barcode?: string;
 }

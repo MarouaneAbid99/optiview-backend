@@ -26,4 +26,8 @@ export class CreateFrameDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @IsString()
+  @IsOptional()
+  barcode?: string;
 }
