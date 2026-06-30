@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import PDFDocument from 'pdfkit';
@@ -10,9 +11,14 @@ const ORDER_INCLUDE = {
   items: { include: { lens: true } },
 };
 
+const LOW_STOCK_THRESHOLD = 2;
+
 @Injectable()
 export class AtelierService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   private async generateOrderNumber(): Promise<string> {
     const count = await this.prisma.order.count();
@@ -85,11 +91,23 @@ export class AtelierService {
         include: ORDER_INCLUDE,
       });
 
+      const lowStockMsgs: string[] = [];
+
       if (involvesStock && dto.frameId) {
-        await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
-        for (const item of dto.items!) {
-          await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
+        const updatedFrame = await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
+        if (updatedFrame.stock <= LOW_STOCK_THRESHOLD) {
+          lowStockMsgs.push(`Monture ${updatedFrame.brand} ${updatedFrame.model}: stock ${updatedFrame.stock}`);
         }
+        for (const item of dto.items!) {
+          const updatedLens = await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
+          if (updatedLens.stock <= LOW_STOCK_THRESHOLD) {
+            lowStockMsgs.push(`Verre ${updatedLens.type} ${updatedLens.material}: stock ${updatedLens.stock}`);
+          }
+        }
+      }
+
+      if (lowStockMsgs.length && shopId) {
+        this.notifications.notifyShop(shopId, 'Stock faible', lowStockMsgs.join(' · '), { type: 'low_stock' }).catch(() => {});
       }
 
       return newOrder;
@@ -162,7 +180,7 @@ export class AtelierService {
     const willCancel   = dto.status === 'cancelled';
     const involvesStock = order.orderType === 'sale' || order.orderType === 'sale_montage';
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       // Restore stock when moving INTO cancelled
       if (!wasCancelled && willCancel && involvesStock) {
         if (order.frameId) {
@@ -187,6 +205,17 @@ export class AtelierService {
         include: ORDER_INCLUDE,
       });
     });
+
+    if (dto.status === 'ready' && order.shopId) {
+      this.notifications.notifyShop(
+        order.shopId,
+        'Commande prête',
+        `La commande ${order.orderNumber} est prête.`,
+        { type: 'order_ready', orderId: id },
+      ).catch(() => {});
+    }
+
+    return updated;
   }
 
   async updateOrder(id: string, dto: CreateOrderDto, shopId?: string) {
@@ -235,7 +264,9 @@ export class AtelierService {
     const framePrice = frame ? frame.price : 0;
     const totalPrice = framePrice + lensTotal + labor;
 
-    return this.prisma.$transaction(async (tx) => {
+    const updateLowStockMsgs: string[] = [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. Restore old stock
       if (oldHoldsStock) {
         if (existing.frameId) {
@@ -250,11 +281,17 @@ export class AtelierService {
       if (newHoldsStock) {
         const freshFrame = await tx.frame.findUnique({ where: { id: dto.frameId } });
         if (!freshFrame || freshFrame.stock < 1) throw new BadRequestException('Selected frame is out of stock');
-        await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
+        const updatedFrame = await tx.frame.update({ where: { id: dto.frameId }, data: { stock: { decrement: 1 } } });
+        if (updatedFrame.stock <= LOW_STOCK_THRESHOLD) {
+          updateLowStockMsgs.push(`Monture ${updatedFrame.brand} ${updatedFrame.model}: stock ${updatedFrame.stock}`);
+        }
         for (const item of dto.items!) {
           const freshLens = await tx.lens.findUnique({ where: { id: item.lensId } });
           if (!freshLens || freshLens.stock < item.quantity) throw new BadRequestException('Insufficient lens stock');
-          await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
+          const updatedLens = await tx.lens.update({ where: { id: item.lensId }, data: { stock: { decrement: item.quantity } } });
+          if (updatedLens.stock <= LOW_STOCK_THRESHOLD) {
+            updateLowStockMsgs.push(`Verre ${updatedLens.type} ${updatedLens.material}: stock ${updatedLens.stock}`);
+          }
         }
       }
 
@@ -284,6 +321,12 @@ export class AtelierService {
         include: ORDER_INCLUDE,
       });
     });
+
+    if (updateLowStockMsgs.length && existing.shopId) {
+      this.notifications.notifyShop(existing.shopId, 'Stock faible', updateLowStockMsgs.join(' · '), { type: 'low_stock' }).catch(() => {});
+    }
+
+    return result;
   }
 
   private async restoreStock(orderId: string) {

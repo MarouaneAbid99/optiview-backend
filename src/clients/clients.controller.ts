@@ -28,6 +28,12 @@ export class ClientsController {
     return this.clientsService.getClientStats(shopId);
   }
 
+  @Get('appointments/upcoming')
+  upcomingAppointments(@CurrentUser() user: AuthUser, @Query('shopId') shopIdParam?: string) {
+    const shopId = resolveShopId(user, shopIdParam);
+    return this.clientsService.upcomingAppointments(shopId);
+  }
+
   @Get()
   findAllClients(
     @CurrentUser() user: AuthUser,

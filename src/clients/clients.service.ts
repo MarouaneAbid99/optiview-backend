@@ -119,6 +119,19 @@ export class ClientsService {
     return this.prisma.appointment.delete({ where: { id } });
   }
 
+  async upcomingAppointments(shopId?: string) {
+    const now = new Date();
+    return this.prisma.appointment.findMany({
+      where: {
+        dateTime: { gte: now },
+        ...(shopId ? { client: { shopId } } : {}),
+      },
+      include: { client: true },
+      orderBy: { dateTime: 'asc' },
+      take: 100,
+    });
+  }
+
   async getClientStats(shopId?: string) {
     const where = shopId ? { shopId } : {};
     const [total, withPrescriptions, withAppointments] = await Promise.all([

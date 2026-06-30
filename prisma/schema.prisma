@@ -46,10 +46,24 @@ model User {
   shopId String?
   shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
+  deviceTokens DeviceToken[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+model DeviceToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  shopId    String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("device_tokens")
 }
 
 // ========== PANORAMA ==========
